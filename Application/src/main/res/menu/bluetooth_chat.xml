@@ -18,13 +18,23 @@
     <item
         android:id="@+id/secure_connect_scan"
         android:icon="@drawable/ic_action_device_access_bluetooth_searching"
-        android:showAsAction="ifRoom"
+        android:showAsAction="always"
         android:title="@string/secure_connect"/>
+
+    <item
+        android:id="@+id/secure_second_connect_scan"
+        android:showAsAction="always"
+        android:title="sec"/>
 
     <item
         android:id="@+id/insecure_connect_scan"
         android:showAsAction="never"
         android:title="@string/insecure_connect"/>
+
+    <item
+        android:id="@+id/insecure_second_connect_scan"
+        android:showAsAction="never"
+        android:title="sec dev-insecure"/>
 
     <item
         android:id="@+id/discoverable"

@@ -54,6 +54,8 @@ public class BluetoothChatFragment extends Fragment {
     // Intent request codes
     private static final int REQUEST_CONNECT_DEVICE_SECURE = 1;
     private static final int REQUEST_CONNECT_DEVICE_INSECURE = 2;
+    private static final int REQUEST_CONNECT_SECOND_DEVICE_SECURE = 4;
+    private static final int REQUEST_CONNECT_SECOND_DEVICE_INSECURE = 5;
     private static final int REQUEST_ENABLE_BT = 3;
 
     // Layout Views
@@ -65,6 +67,8 @@ public class BluetoothChatFragment extends Fragment {
      * Name of the connected device
      */
     private String mConnectedDeviceName = null;
+    private String mSecondConnectedDeviceName = null;
+
 
     /**
      * Array adapter for the conversation thread
@@ -85,6 +89,7 @@ public class BluetoothChatFragment extends Fragment {
      * Member object for the chat services
      */
     private BluetoothChatService mChatService = null;
+    private BluetoothChatService mSecondChatService = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -181,7 +186,9 @@ public class BluetoothChatFragment extends Fragment {
         });
 
         // Initialize the BluetoothChatService to perform bluetooth connections
-        mChatService = new BluetoothChatService(getActivity(), mHandler);
+        mChatService = new BluetoothChatService(getActivity(), mHandler, 1);
+        mSecondChatService = new BluetoothChatService(getActivity(), mHandler, 2);
+
 
         // Initialize the buffer for outgoing messages
         mOutStringBuffer = new StringBuffer("");
@@ -206,7 +213,8 @@ public class BluetoothChatFragment extends Fragment {
      */
     private void sendMessage(String message) {
         // Check that we're actually connected before trying anything
-        if (mChatService.getState() != BluetoothChatService.STATE_CONNECTED) {
+        if (mChatService.getState() != BluetoothChatService.STATE_CONNECTED
+                && mSecondChatService.getState() != BluetoothChatService.STATE_CONNECTED) {
             Toast.makeText(getActivity(), R.string.not_connected, Toast.LENGTH_SHORT).show();
             return;
         }
@@ -283,8 +291,9 @@ public class BluetoothChatFragment extends Fragment {
                 case Constants.MESSAGE_STATE_CHANGE:
                     switch (msg.arg1) {
                         case BluetoothChatService.STATE_CONNECTED:
-                            setStatus(getString(R.string.title_connected_to, mConnectedDeviceName));
-                            mConversationArrayAdapter.clear();
+                            setStatus(getString(R.string.title_connected_to, mConnectedDeviceName
+                                    + "&" + mSecondConnectedDeviceName));
+//                            mConversationArrayAdapter.clear();
                             break;
                         case BluetoothChatService.STATE_CONNECTING:
                             setStatus(R.string.title_connecting);
@@ -303,18 +312,39 @@ public class BluetoothChatFragment extends Fragment {
                     break;
                 case Constants.MESSAGE_READ:
                     byte[] readBuf = (byte[]) msg.obj;
+
+                    // arg1 is byetes
+                    // arg2 is connectionNumber
+
                     // construct a string from the valid bytes in the buffer
-                    String readMessage = new String(readBuf, 0, msg.arg1);
-                    mConversationArrayAdapter.add(mConnectedDeviceName + ":  " + readMessage);
-                    break;
-                case Constants.MESSAGE_DEVICE_NAME:
-                    // save the connected device's name
-                    mConnectedDeviceName = msg.getData().getString(Constants.DEVICE_NAME);
-                    if (null != activity) {
-                        Toast.makeText(activity, "Connected to "
-                                + mConnectedDeviceName, Toast.LENGTH_SHORT).show();
+                    if (msg.arg2 == 1){
+                        String readMessage = new String(readBuf, 0, msg.arg1);
+                        mConversationArrayAdapter.add(mConnectedDeviceName + ":  " + readMessage);
+                    }
+                    else if (msg.arg2 == 2){
+                        String readMessage = new String(readBuf, 0, msg.arg1);
+                        mConversationArrayAdapter.add(mSecondConnectedDeviceName + ":  " + readMessage);
                     }
                     break;
+                case Constants.MESSAGE_DEVICE_NAME:
+                    if (msg.arg1 == 1){
+                        // save the connected device's name
+                        mConnectedDeviceName = msg.getData().getString(Constants.DEVICE_NAME);
+                        if (null != activity) {
+                            Toast.makeText(activity, "Connected to "
+                                    + mConnectedDeviceName, Toast.LENGTH_SHORT).show();
+                        }
+                        break;
+                    }
+                    else if (msg.arg1 ==2){
+                        // save the connected device's name
+                        mSecondConnectedDeviceName = msg.getData().getString(Constants.DEVICE_NAME);
+                        if (null != activity) {
+                            Toast.makeText(activity, "Connected to second device:"
+                                    + mSecondConnectedDeviceName, Toast.LENGTH_SHORT).show();
+                        }
+                        break;
+                    }
                 case Constants.MESSAGE_TOAST:
                     if (null != activity) {
                         Toast.makeText(activity, msg.getData().getString(Constants.TOAST),
@@ -337,6 +367,18 @@ public class BluetoothChatFragment extends Fragment {
                 // When DeviceListActivity returns with a device to connect
                 if (resultCode == Activity.RESULT_OK) {
                     connectDevice(data, false);
+                }
+                break;
+            case REQUEST_CONNECT_SECOND_DEVICE_INSECURE:
+                // When DeviceListActivity returns with a device to connect
+                if (resultCode == Activity.RESULT_OK) {
+                    connectSecondDevice(data, false);
+                }
+                break;
+            case REQUEST_CONNECT_SECOND_DEVICE_SECURE:
+                // When DeviceListActivity returns with a device to connect
+                if (resultCode == Activity.RESULT_OK) {
+                    connectSecondDevice(data, true);
                 }
                 break;
             case REQUEST_ENABLE_BT:
@@ -370,6 +412,17 @@ public class BluetoothChatFragment extends Fragment {
         mChatService.connect(device, secure);
     }
 
+    private void connectSecondDevice(Intent data, boolean secure) {
+        // Get the device MAC address
+        String address = data.getExtras()
+                .getString(DeviceListActivity.EXTRA_DEVICE_ADDRESS);
+        // Get the BluetoothDevice object
+        BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
+        // Attempt to connect to the device
+        mSecondChatService.connect(device, secure);
+    }
+
+
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
         inflater.inflate(R.menu.bluetooth_chat, menu);
@@ -390,6 +443,19 @@ public class BluetoothChatFragment extends Fragment {
                 startActivityForResult(serverIntent, REQUEST_CONNECT_DEVICE_INSECURE);
                 return true;
             }
+            case R.id.secure_second_connect_scan: {
+                // Launch the DeviceListActivity to see devices and do scan
+                Intent serverIntent = new Intent(getActivity(), DeviceListActivity.class);
+                startActivityForResult(serverIntent, REQUEST_CONNECT_SECOND_DEVICE_SECURE);
+                return true;
+            }
+            case R.id.insecure_second_connect_scan: {
+                // Launch the DeviceListActivity to see devices and do scan
+                Intent serverIntent = new Intent(getActivity(), DeviceListActivity.class);
+                startActivityForResult(serverIntent, REQUEST_CONNECT_SECOND_DEVICE_INSECURE);
+                return true;
+            }
+
             case R.id.discoverable: {
                 // Ensure this device is discoverable by others
                 ensureDiscoverable();
