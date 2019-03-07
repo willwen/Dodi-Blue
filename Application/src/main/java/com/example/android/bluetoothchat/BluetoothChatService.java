@@ -47,10 +47,8 @@ public class BluetoothChatService {
     private static final String NAME_INSECURE = "BluetoothChatInsecure";
 
     // Unique UUID for this application
-    private static final UUID MY_UUID_SECURE =
-            UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a66");
-    private static final UUID MY_UUID_INSECURE =
-            UUID.fromString("8ce255c0-200a-11e0-ac64-0800200c9a66");
+    private static final UUID MY_UUID_SECURE = UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a60");
+    private static UUID MY_UUID_INSECURE = UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a60");
 
     // Member fields
     private final BluetoothAdapter mAdapter;
@@ -247,7 +245,7 @@ public class BluetoothChatService {
      * @param out The bytes to write
      * @see ConnectedThread#write(byte[])
      */
-    public void write(byte[] out) {
+    public void write(byte[] out, boolean isRepeat) {
         // Create temporary object
         ConnectedThread r;
         // Synchronize a copy of the ConnectedThread
@@ -256,7 +254,7 @@ public class BluetoothChatService {
             r = mConnectedThread;
         }
         // Perform the write unsynchronized
-        r.write(out);
+        r.write(out, isRepeat);
     }
 
     /**
@@ -512,17 +510,20 @@ public class BluetoothChatService {
          *
          * @param buffer The bytes to write
          */
-        public void write(byte[] buffer) {
+        public void write(byte[] buffer, boolean isRepeat) {
             try {
                 mmOutStream.write(buffer);
+                if (! isRepeat){
+                    // Share the sent message back to the UI Activity
+                    mHandler.obtainMessage(Constants.MESSAGE_WRITE, -1, -1, buffer)
+                            .sendToTarget();
+                }
 
-                // Share the sent message back to the UI Activity
-                mHandler.obtainMessage(Constants.MESSAGE_WRITE, -1, -1, buffer)
-                        .sendToTarget();
             } catch (IOException e) {
                 Log.e(TAG, "Exception during write", e);
             }
         }
+
 
         public void cancel() {
             try {

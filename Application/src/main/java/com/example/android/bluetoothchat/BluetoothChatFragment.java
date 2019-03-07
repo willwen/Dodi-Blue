@@ -91,6 +91,9 @@ public class BluetoothChatFragment extends Fragment {
     private BluetoothChatService mChatService = null;
     private BluetoothChatService mSecondChatService = null;
 
+
+    private boolean isServer = false;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -143,6 +146,15 @@ public class BluetoothChatFragment extends Fragment {
                 mChatService.start();
             }
         }
+
+        if (mSecondChatService != null) {
+            // Only if the state is STATE_NONE, do we know that we haven't started already
+            if (mSecondChatService.getState() == BluetoothChatService.STATE_NONE) {
+                // Start the Bluetooth chat services
+                mSecondChatService.start();
+            }
+        }
+
     }
 
     @Override
@@ -180,7 +192,7 @@ public class BluetoothChatFragment extends Fragment {
                 if (null != view) {
                     TextView textView = (TextView) view.findViewById(R.id.edit_text_out);
                     String message = textView.getText().toString();
-                    sendMessage(message);
+                    sendMessage(0,message, false);
                 }
             }
         });
@@ -206,29 +218,85 @@ public class BluetoothChatFragment extends Fragment {
         }
     }
 
-    /**
-     * Sends a message.
-     *
-     * @param message A string of text to send.
-     */
-    private void sendMessage(String message) {
+    private void sendMessageCopyForHandler (int connectionNumber, String message) {
+        sendMessage(connectionNumber, message, true);
+
+    }
+
+        /**
+         * Sends a message.
+         *
+         * @param message A string of text to send.
+         */
+    private void sendMessage(int connectionNumberToSendTo, String message, boolean isRepeat) {
         // Check that we're actually connected before trying anything
-        if (mChatService.getState() != BluetoothChatService.STATE_CONNECTED
-                && mSecondChatService.getState() != BluetoothChatService.STATE_CONNECTED) {
-            Toast.makeText(getActivity(), R.string.not_connected, Toast.LENGTH_SHORT).show();
-            return;
+        // both have to be connected
+        if (connectionNumberToSendTo == 1){
+            if (mChatService.getState() != BluetoothChatService.STATE_CONNECTED
+                   ) {
+                Toast.makeText(getActivity(), R.string.not_connected, Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Check that there's actually something to send
+            if (message.length() > 0) {
+                // Get the message bytes and tell the BluetoothChatService to write
+                byte[] send = message.getBytes();
+
+                mChatService.write(send, isRepeat);
+
+
+                // Reset out string buffer to zero and clear the edit text field
+                mOutStringBuffer.setLength(0);
+                mOutEditText.setText(mOutStringBuffer);
+            }
         }
 
-        // Check that there's actually something to send
-        if (message.length() > 0) {
-            // Get the message bytes and tell the BluetoothChatService to write
-            byte[] send = message.getBytes();
-            mChatService.write(send);
+        else if (connectionNumberToSendTo == 2){
+            if (mSecondChatService.getState() != BluetoothChatService.STATE_CONNECTED) {
+                Toast.makeText(getActivity(), R.string.not_connected, Toast.LENGTH_SHORT).show();
+                return;
+            }
 
-            // Reset out string buffer to zero and clear the edit text field
-            mOutStringBuffer.setLength(0);
-            mOutEditText.setText(mOutStringBuffer);
+            // Check that there's actually something to send
+            if (message.length() > 0) {
+                // Get the message bytes and tell the BluetoothChatService to write
+                byte[] send = message.getBytes();
+                mSecondChatService.write(send, isRepeat);
+
+                // Reset out string buffer to zero and clear the edit text field
+                mOutStringBuffer.setLength(0);
+                mOutEditText.setText(mOutStringBuffer);
+            }
         }
+
+        else if (connectionNumberToSendTo == 0){
+            //send to both:
+            if (mChatService.getState() != BluetoothChatService.STATE_CONNECTED
+                &&
+                    mSecondChatService.getState() != BluetoothChatService.STATE_CONNECTED) {
+                Toast.makeText(getActivity(), R.string.not_connected, Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Check that there's actually something to send
+            if (message.length() > 0) {
+                // Get the message bytes and tell the BluetoothChatService to write
+                byte[] send = message.getBytes();
+                // treat the first one as orignal send.
+                // the second one, dont echo it back to the screen
+                mChatService.write(send, false);
+                mSecondChatService.write(send, true);
+
+
+                // Reset out string buffer to zero and clear the edit text field
+                mOutStringBuffer.setLength(0);
+                mOutEditText.setText(mOutStringBuffer);
+            }
+        }
+
+
+
     }
 
     /**
@@ -240,7 +308,7 @@ public class BluetoothChatFragment extends Fragment {
             // If the action is a key-up event on the return key, send the message
             if (actionId == EditorInfo.IME_NULL && event.getAction() == KeyEvent.ACTION_UP) {
                 String message = view.getText().toString();
-                sendMessage(message);
+                sendMessage(0, message, false);
             }
             return true;
         }
@@ -294,13 +362,21 @@ public class BluetoothChatFragment extends Fragment {
                             setStatus(getString(R.string.title_connected_to, mConnectedDeviceName
                                     + "&" + mSecondConnectedDeviceName));
 //                            mConversationArrayAdapter.clear();
+                            if (mChatService.getState() == BluetoothChatService.STATE_CONNECTED
+                                    && mSecondChatService.getState() == BluetoothChatService.STATE_CONNECTED){
+                                isServer = true;
+                            }
                             break;
                         case BluetoothChatService.STATE_CONNECTING:
                             setStatus(R.string.title_connecting);
+
+                            isServer = false;
+
                             break;
                         case BluetoothChatService.STATE_LISTEN:
                         case BluetoothChatService.STATE_NONE:
                             setStatus(R.string.title_not_connected);
+                            isServer = false;
                             break;
                     }
                     break;
@@ -313,17 +389,23 @@ public class BluetoothChatFragment extends Fragment {
                 case Constants.MESSAGE_READ:
                     byte[] readBuf = (byte[]) msg.obj;
 
-                    // arg1 is byetes
+                    // arg1 is bytes
                     // arg2 is connectionNumber
 
                     // construct a string from the valid bytes in the buffer
                     if (msg.arg2 == 1){
                         String readMessage = new String(readBuf, 0, msg.arg1);
                         mConversationArrayAdapter.add(mConnectedDeviceName + ":  " + readMessage);
+                        if (isServer){
+                            sendMessageCopyForHandler(2, mConnectedDeviceName + ": " +readMessage);
+                        }
                     }
                     else if (msg.arg2 == 2){
                         String readMessage = new String(readBuf, 0, msg.arg1);
                         mConversationArrayAdapter.add(mSecondConnectedDeviceName + ":  " + readMessage);
+                        if (isServer){
+                            sendMessageCopyForHandler(1, mSecondConnectedDeviceName + ": " + readMessage);
+                        }
                     }
                     break;
                 case Constants.MESSAGE_DEVICE_NAME:
@@ -360,25 +442,25 @@ public class BluetoothChatFragment extends Fragment {
             case REQUEST_CONNECT_DEVICE_SECURE:
                 // When DeviceListActivity returns with a device to connect
                 if (resultCode == Activity.RESULT_OK) {
-                    connectDevice(data, true);
+                    connectDevice(data, true, 1);
                 }
                 break;
             case REQUEST_CONNECT_DEVICE_INSECURE:
                 // When DeviceListActivity returns with a device to connect
                 if (resultCode == Activity.RESULT_OK) {
-                    connectDevice(data, false);
+                    connectDevice(data, false,1);
                 }
                 break;
             case REQUEST_CONNECT_SECOND_DEVICE_INSECURE:
                 // When DeviceListActivity returns with a device to connect
                 if (resultCode == Activity.RESULT_OK) {
-                    connectSecondDevice(data, false);
+                    connectDevice(data, false,2);
                 }
                 break;
             case REQUEST_CONNECT_SECOND_DEVICE_SECURE:
                 // When DeviceListActivity returns with a device to connect
                 if (resultCode == Activity.RESULT_OK) {
-                    connectSecondDevice(data, true);
+                    connectDevice(data, false,2);
                 }
                 break;
             case REQUEST_ENABLE_BT:
@@ -402,24 +484,21 @@ public class BluetoothChatFragment extends Fragment {
      * @param data   An {@link Intent} with {@link DeviceListActivity#EXTRA_DEVICE_ADDRESS} extra.
      * @param secure Socket Security type - Secure (true) , Insecure (false)
      */
-    private void connectDevice(Intent data, boolean secure) {
+    private void connectDevice(Intent data, boolean secure, int connectionNumber) {
         // Get the device MAC address
         String address = data.getExtras()
                 .getString(DeviceListActivity.EXTRA_DEVICE_ADDRESS);
         // Get the BluetoothDevice object
         BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
         // Attempt to connect to the device
-        mChatService.connect(device, secure);
-    }
+        if (connectionNumber == 1){
+            mChatService.connect(device, secure);
+        }
+        else{
+            mSecondChatService.connect(device, secure);
+        }
 
-    private void connectSecondDevice(Intent data, boolean secure) {
-        // Get the device MAC address
-        String address = data.getExtras()
-                .getString(DeviceListActivity.EXTRA_DEVICE_ADDRESS);
-        // Get the BluetoothDevice object
-        BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
-        // Attempt to connect to the device
-        mSecondChatService.connect(device, secure);
+
     }
 
 
